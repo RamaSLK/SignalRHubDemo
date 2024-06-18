@@ -1,0 +1,122 @@
+﻿@page "/groupchat"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
+@inject NavigationManager Navigation
+<PageTitle>Group Chat App</PageTitle>
+
+<h3 style="color: brown">@groupResponse</h3>
+
+<form>
+    <div class="row p-1">
+        <div class="col-sm-1">
+            <label class="form-label m-1">Group</label>
+        </div>
+        <div class="col-sm-3">
+            <input @bind="groupInput" type="text" class="form-control form-control-sm">
+        </div>
+    </div>
+    <div class="row p-1">
+        <div class="gap-1 col-sm-3">
+            <button @onclick="JoinGroup" disabled="@(!IsConnected)" type="button" class="btn btn-primary btn-sm">Join Group</button>
+            <button @onclick="LeaveGroup" disabled="@(!IsConnected)" type="button" class="btn btn-primary btn-sm">Leave Group</button>
+        </div>
+    </div>
+    <hr/>
+    <div class="row p-1">
+        <div class="col-sm-1">
+            <label class="form-label m-1">Username</label>
+        </div>
+        <div class="col-sm-3">
+            <input @bind="userInput" type="text" class="form-control form-control-sm">
+        </div>
+    </div>
+    <div class="row p-1">
+        <div class="col-sm-1">
+            <label class="form-label m-1" size="50">Message</label>
+        </div>
+        <div class="col-sm-3">
+            <input @bind="messageInput" type="text" class="form-control form-control-sm">
+        </div>
+    </div>
+
+    <div class="row p-1">
+        <div class="col">
+            <button @onclick="SendMessage" disabled="@(!IsConnected)" type="button" class="btn btn-primary btn-sm">Send</button>
+        </div>
+    </div>
+
+</form>
+<hr/>
+<ul>
+    @foreach (var message in messages)
+    {
+        <li>@message</li>
+    }
+</ul>
+
+@code {
+    private HubConnection? hubConnection;
+    private string userInput;
+    private string groupInput;
+    private string groupResponse = "No group";
+    private string messageInput;
+    private List<string> messages = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/groupchathub"))
+            .Build();
+
+        hubConnection.On<string, string>("ReceiveMessage", (user, message) =>
+        {
+            var encodedMessage = $"{user}: {message}";
+            messages.Add(encodedMessage);
+            InvokeAsync(StateHasChanged);
+        });
+
+        hubConnection.On<string>("GroupResponse", (response) =>
+        {
+            groupResponse = response;
+            InvokeAsync(StateHasChanged);
+        });
+
+        await hubConnection.StartAsync();
+    }
+
+    private async Task JoinGroup()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.SendAsync("AddToGroup", groupInput);
+        }
+    }
+
+    private async Task LeaveGroup()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.SendAsync("RemoveFromGroup", groupInput);
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.SendAsync("SendMessageToGroup", groupInput, userInput, messageInput);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+
+    public bool IsConnected =>
+        hubConnection?.State == HubConnectionState.Connected;
+}
